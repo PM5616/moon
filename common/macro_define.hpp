@@ -33,22 +33,8 @@
 using namespace std::literals::string_literals;
 using namespace std::literals::string_view_literals;
 
-namespace moon
-{
-    using string_view_t = std::string_view;
-    using wstring_view_t = std::wstring_view;
-}
-
 #undef min
 #undef max
-
-#ifndef INLINE
-#define INLINE		inline
-#endif
-
-#define BREAK_IF(x) if(x) break;
-#define SAFE_DELETE(x) if(nullptr != x) {delete x; x = nullptr;}
-#define SAFE_DELETE_ARRAY(x) if(nullptr != x) {delete []x; x = nullptr;}
 
 #define VA_ARGS_NUM(...) std::tuple_size<decltype(std::make_tuple(__VA_ARGS__))>::value
 
@@ -71,6 +57,7 @@ namespace moon
 {
     enum  class state
     {
+        unknown,
         init,
         ready,
         stopping,

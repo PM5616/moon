@@ -1,0 +1,200 @@
+#pragma once
+#include "config.hpp"
+#include "common/buffer.hpp"
+
+namespace moon
+{
+    class  message final
+    {
+    public:
+        static buffer_ptr_t create_buffer(size_t capacity = 64, uint32_t headreserved = BUFFER_HEAD_RESERVED)
+        {
+            return std::make_shared<buffer>(capacity, headreserved);
+        }
+
+        static message_ptr_t create(size_t capacity = 64, uint32_t headreserved = BUFFER_HEAD_RESERVED)
+        {
+            return std::make_unique<message>(capacity, headreserved);
+        }
+
+        template<typename Buffer,std::enable_if_t<std::is_same_v<std::decay_t<Buffer>,buffer_ptr_t>,int> = 0>
+        static message_ptr_t create(Buffer&& v)
+        {
+            return std::make_unique<message>(std::forward<Buffer>(v));
+        }
+
+        message(size_t capacity = 64, uint32_t headreserved = 0)
+        {
+            data_ = std::make_shared<buffer>(capacity, headreserved);
+        }
+
+        template<typename Buffer, std::enable_if_t<std::is_same_v<std::decay_t<Buffer>, buffer_ptr_t>, int> = 0>
+        explicit message(Buffer&& v)
+            :data_(std::forward<Buffer>(v))
+        {
+            
+        }
+
+        ~message()
+        {
+        }
+
+        message(const message&) = delete;
+
+        message& operator=(const message&) = delete;
+
+        void set_sender(uint32_t serviceid)
+        {
+            sender_ = serviceid;
+        }
+
+        uint32_t sender() const
+        {
+            return sender_;
+        }
+
+        void set_receiver(uint32_t serviceid)
+        {
+            receiver_ = serviceid;
+        }
+
+        uint32_t receiver() const
+        {
+            return receiver_;
+        }
+
+        void set_header(std::string_view header)
+        {
+            if (header.size() != 0)
+            {
+                if (!header_)
+                {
+                    header_ = std::make_unique<std::string>(header);
+                }
+                else
+                {
+                    header_->clear();
+                    header_->assign(header);
+                }
+            }
+        }
+
+        std::string_view header() const
+        {
+            if (nullptr == header_)
+            {
+                return std::string_view{};
+            }
+            else
+            {
+                return std::string_view{ *header_ };
+            }
+        }
+
+        void set_sessionid(int32_t v)
+        {
+            sessionid_ = v;
+        }
+
+        int32_t sessionid() const
+        {
+            return sessionid_;
+        }
+
+        void set_type(uint8_t v)
+        {
+            type_ = v;
+        }
+
+        uint8_t type() const
+        {
+            return type_;
+        }
+
+        std::string_view bytes() const
+        {
+            if (!data_)
+            {
+                return std::string_view(nullptr, 0);
+            }
+            return std::string_view{ data_->data(), data_->size() };
+        }
+
+        std::string_view substr(int pos, size_t len = std::string_view::npos) const
+        {
+            if (!data_)
+            {
+                return std::string_view(nullptr, 0);
+            }
+            std::string_view sr(data_->data(), data_->size());
+            return sr.substr(pos, len);
+        }
+
+        void write_data(std::string_view s)
+        {
+            assert(data_);
+            data_->write_back(s.data(), s.size());
+        }
+
+        const char* data() const
+        {
+            return data_ ? data_->data() : nullptr;
+        }
+
+        size_t size() const
+        {
+            return data_ ? data_->size():0;
+        }
+
+        operator const buffer_ptr_t&() const
+        {
+            return data_;
+        }
+
+        buffer* get_buffer()
+        {
+            return data_ ? data_.get() : nullptr;
+        }
+
+        bool broadcast() const
+        {
+            return data_?data_->has_flag(buffer_flag::broadcast):false;
+        }
+
+        void set_broadcast(bool v)
+        {
+            if (!data_)
+            {
+                return;
+            }
+            v ? data_->set_flag(buffer_flag::broadcast) : data_->clear_flag(buffer_flag::broadcast);
+        }
+
+        void reset()
+        {
+            type_ = 0;
+            sender_ = 0;
+            receiver_ = 0;
+            sessionid_ = 0;
+
+            if (header_)
+            {
+                header_->clear();
+            }
+
+            if (data_)
+            {
+                data_->clear();
+            }
+        }
+    private:
+        uint8_t type_ = 0;
+        uint32_t sender_ = 0;
+        uint32_t receiver_ = 0;
+        int32_t sessionid_ = 0;
+        std::unique_ptr<std::string> header_;
+        buffer_ptr_t data_;
+    };
+};
+
+

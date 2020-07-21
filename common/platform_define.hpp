@@ -43,16 +43,21 @@
 #error  "Cannot recognize the target platform; are you targeting an unsupported platform?"
 #endif 
 
-#if (TARGET_PLATFORM == PLATFORM_WINDOWS)
-#ifndef __MINGW32__
-#pragma warning (disable:4127) 
-#endif 
-#endif  // PLATFORM_WIN32
-
 #if TARGET_PLATFORM == PLATFORM_WINDOWS
 #include <WinSock2.h>
 #include <process.h> //  _get_pid support
+#include <stdio.h>
+#include <stdarg.h>
 #define strnicmp	_strnicmp
+
+inline int moon_vsnprintf(char* buffer,
+    size_t count,
+    const char* format,
+    va_list argptr)
+{
+    return vsnprintf_s(buffer, count, _TRUNCATE, format, argptr);
+}
+
 #ifdef  _WIN64
 typedef __int64    ssize_t;
 #else
@@ -61,12 +66,7 @@ typedef _W64 int   ssize_t;
 #else
 #include <sys/syscall.h>
 #include <unistd.h>
-#endif
-
-#if defined(_USRDLL)
-#define MOON_EXPORT __declspec(dllexport)
-#else /* use as DLL library */
-#define MOON_EXPORT
+#define moon_vsnprintf vsnprintf 
 #endif
 
 #ifndef __has_feature       // Clang - feature checking macros.

@@ -7,6 +7,7 @@
 #include "common/object_pool.hpp"
 #include "common/buffer.hpp"
 #include "common/spinlock.hpp"
+#include "common/string.hpp"
 
 namespace moon
 {
@@ -62,7 +63,8 @@ namespace moon
             state_.store(state::ready, std::memory_order_release);
         }
 
-        void logfmt(bool console, LogLevel level, const char* fmt, ...)
+        template<typename... Args>
+        void logfmt(bool console, LogLevel level, const char* fmt, Args&&... args)
         {
             if (level_ < level)
             {
@@ -72,33 +74,27 @@ namespace moon
             if (nullptr == fmt)
                 return;
 
-            static thread_local char fmtbuf[MAX_LOG_LEN+1];
-            va_list ap;
-            va_start(ap, fmt);
-#if TARGET_PLATFORM == PLATFORM_WINDOWS
-            int n = vsnprintf_s(fmtbuf, MAX_LOG_LEN, fmt, ap);
-#else
-            int n = vsnprintf(fmtbuf, MAX_LOG_LEN, fmt, ap);
-#endif
-            va_end(ap);
-            logstring(console, level, moon::string_view_t(fmtbuf, n));
+            std::string str = moon::format(fmt, std::forward<Args>(args)...);
+            logstring(console, level, std::string_view{ str });
         }
 
-        void logstring(bool console, LogLevel level, moon::string_view_t s, uint64_t serviceid = 0)
+        void logstring(bool console, LogLevel level, std::string_view s, uint64_t serviceid = 0)
         {
             if (level_ < level)
             {
                 return;
             }
 
+            console = enable_console_ ? console : enable_console_;
+
             auto buf = buffer_cache_.create(s.size());
             auto b = std::addressof(*buf->begin());
             *(b++) = static_cast<char>(console);
             *(b++) = static_cast<char>(level);
             size_t offset = format_header(b, level, serviceid);
-            buf->offset_writepos(2 + static_cast<int>(offset));
-            buf->write_back(s.data(), 0, s.size());
-            buf->write_back("\n", 0, 1);
+            buf->commit(2 + offset);
+            buf->write_back(s.data(), s.size());
+            buf->write_back("\n", 1);
             log_queue_.push_back(buf);
         }
 
@@ -107,21 +103,31 @@ namespace moon
             level_ = level;
         }
 
-        void set_level(string_view_t s)
+		LogLevel get_level() 
+		{ 
+			return level_; 
+		}
+
+        void set_enable_console(bool v)
         {
-            if (moon::iequal_string(s, string_view_t{ "DEBUG" }))
+            enable_console_ = v;
+        }
+
+        void set_level(std::string_view s)
+        {
+            if (moon::iequal_string(s, std::string_view{ "DEBUG" }))
             {
                 set_level(LogLevel::Debug);
             }
-            else  if (moon::iequal_string(s, string_view_t{ "INFO" }))
+            else  if (moon::iequal_string(s, std::string_view{ "INFO" }))
             {
                 set_level(LogLevel::Info);
             }
-            else  if (moon::iequal_string(s, string_view_t{ "WARN" }))
+            else  if (moon::iequal_string(s, std::string_view{ "WARN" }))
             {
                 set_level(LogLevel::Warn);
             }
-            else  if (moon::iequal_string(s, string_view_t{ "ERROR" }))
+            else  if (moon::iequal_string(s, std::string_view{ "ERROR" }))
             {
                 set_level(LogLevel::Error);
             }
@@ -187,7 +193,6 @@ namespace moon
             queue_t::container_type swaps;
             while (state_.load() == state::ready || log_queue_.size() != 0)
             {
-                swaps.clear();
                 log_queue_.swap(swaps);
                 for (auto& it : swaps)
                 {
@@ -197,7 +202,7 @@ namespace moon
                     it->seek(2, buffer::seek_origin::Current);
                     if (bconsole)
                     {
-                        auto s = moon::string_view_t(reinterpret_cast<const char*>(it->data()), it->size());
+                        auto s = std::string_view(reinterpret_cast<const char*>(it->data()), it->size());
                         switch (level)
                         {
                         case LogLevel::Error:
@@ -227,6 +232,7 @@ namespace moon
                 {
                     ofs_->flush();
                 }
+                swaps.clear();
             }
         }
 
@@ -247,6 +253,7 @@ namespace moon
             }
         }
 
+        bool enable_console_ = true;
         std::atomic<state> state_;
         std::atomic<LogLevel> level_;
         std::unique_ptr<std::ofstream > ofs_;

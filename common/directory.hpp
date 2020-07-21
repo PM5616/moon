@@ -1,12 +1,13 @@
 #pragma once
 #include "platform_define.hpp"
+#include "common/string.hpp"
 
-#if TARGET_PLATFORM == PLATFORM_WINDOWS || TARGET_PLATFORM == PLATFORM_MAC
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
+#if defined(__GNUC__)
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
+#else
+#include <filesystem>
+namespace fs = std::filesystem;
 #endif
 
 namespace moon
@@ -50,6 +51,19 @@ namespace moon
             return p.string();
         }
 
+        static fs::path module_path()
+        {
+#if TARGET_PLATFORM == PLATFORM_WINDOWS
+            char temp[MAX_PATH];
+            auto len = GetModuleFileName(NULL, temp, MAX_PATH);
+#else
+            char temp[1024];
+            auto len = readlink("/proc/self/exe", temp, 1024);
+#endif
+            std::string res(temp, len);
+            return fs::path(res).parent_path();
+        }
+
         static bool exists(const std::string &path)
         {
             std::error_code ec;
@@ -85,21 +99,27 @@ namespace moon
             return !ec;
         }
 
-        static std::string find_file(const std::string& path, const std::string& filename, int depth = 10)
+        static std::string find(const std::string& path, const std::string& filename, int depth = 10)
         {
             std::string result;
-            traverse_folder(path, depth, [&result, &filename](const fs::path& p, bool isdir)
+            std::vector<std::string> searchdir = moon::split<std::string>(path, ";");
+            for (const auto& v : searchdir)
             {
-                if (!isdir)
-                {
-                    if (p.filename().string() == filename)
+                traverse_folder(v, depth, [&result, &filename](const fs::path& p, bool)
                     {
-                        result = fs::absolute(p).string();
-                        return false;
-                    }
+                        if (p.filename().string() == filename)
+                        {
+                            result = fs::absolute(p).string();
+                            return false;
+                        }
+                        return true;
+                    });
+
+                if (!result.empty())
+                {
+                    return result;
                 }
-                return true;
-            });
+            }
             return result;
         }
     };

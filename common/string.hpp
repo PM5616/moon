@@ -4,59 +4,62 @@
 #include <cmath>
 #include <sstream>
 #include <cctype>
+#include <charconv>
+#include <iostream>
 #include "macro_define.hpp"
 
 namespace moon
 {
-    template<class T>
-    T string_convert(const string_view_t& s);
-
-    template<>
-    inline std::string string_convert< std::string>(const string_view_t& s)
+    template<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>
+    inline T string_convert(const std::string_view& s, std::errc& ec)
     {
-        return std::string(s.data(), s.size());
+        T result;
+        auto res = std::from_chars(s.data(), s.data() + s.size(), result);
+        ec = res.ec;
+        return result;
     }
 
-    template<>
-    inline string_view_t string_convert<string_view_t>(const string_view_t& s)
+    template<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>
+    inline T string_convert(const std::string_view& s)
+    {
+        T result;
+        if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), result); ec != std::errc())
+        {
+            throw std::runtime_error(std::to_string(static_cast<int>(ec)));
+        }
+        return result;
+    }
+
+    template<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    inline T string_convert(const std::string_view& s, std::errc& ec, int base = 10)
+    {
+        T result;
+        auto res = std::from_chars(s.data(), s.data() + s.size(), result, base);
+        ec = res.ec;
+        return result;
+    }
+
+    template<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
+    inline T string_convert(const std::string_view& s, int base = 10)
+    {
+        T result;
+        if (auto[p, ec] = std::from_chars(s.data(), s.data() + s.size(), result, base); ec != std::errc())
+        {
+            throw std::runtime_error(std::to_string(static_cast<int>(ec)));
+        }
+        return result;
+    }
+
+    template<typename T, std::enable_if_t<std::is_same_v<T, std::string>, int> = 0>
+    inline std::string string_convert(const std::string_view& s)
+    {
+        return std::string(s);
+    }
+
+    template<typename T, std::enable_if_t<std::is_same_v<T, std::string_view>, int> = 0>
+    inline std::string_view string_convert(const std::string_view& s)
     {
         return s;
-    }
-
-    template<>
-    inline int32_t string_convert<int32_t>(const string_view_t& s)
-    {
-        return static_cast<int32_t>(std::stoi(std::string(s.data(), s.size())));
-    }
-
-    template<>
-    inline uint32_t string_convert<uint32_t>(const string_view_t& s)
-    {
-        return static_cast<uint32_t>(std::stoul(std::string(s.data(), s.size())));
-    }
-
-    template<>
-    inline int64_t string_convert<int64_t>(const string_view_t& s)
-    {
-        return std::stoll(std::string(s.data(), s.size()));
-    }
-
-    template<>
-    inline uint64_t string_convert<uint64_t>(const string_view_t& s)
-    {
-        return std::stoull(std::string(s.data(), s.size()));
-    }
-
-    template<>
-    inline float string_convert<float>(const string_view_t& s)
-    {
-        return std::stof(std::string(s.data(), s.size()));
-    }
-
-    template<>
-    inline double string_convert<double>(const string_view_t& s)
-    {
-        return std::stod(std::string(s.data(), s.size()));
     }
 
     constexpr uint64_t pow10(int n)
@@ -64,15 +67,37 @@ namespace moon
         return (n < 1) ? 1 : 10 * pow10(n - 1);
     }
 
+    inline size_t int_log10(size_t v)
+    {
+        size_t n = 0;
+        while (v > 9)
+        {
+            v /= 10;
+            ++n;
+        }
+        return n;
+    }
+
+    inline size_t int_log16(size_t v)
+    {
+        size_t n = 0;
+        while (v > 15)
+        {
+            v >>= 4;
+            ++n;
+        }
+        return n;
+    }
+
     inline size_t uint64_to_str(uint64_t value, char *dst)
     {
-        static const char digits[201] =
+        static const char digits[] =
             "0001020304050607080910111213141516171819"
             "2021222324252627282930313233343536373839"
             "4041424344454647484950515253545556575859"
             "6061626364656667686970717273747576777879"
             "8081828384858687888990919293949596979899";
-        const  size_t length = static_cast<size_t>(std::log10(value)) + 1;
+        const  size_t length = int_log10(value) + 1;
         size_t next = length - 1;
         while (value >= 100) {
             const int i = (value % 100) * 2;
@@ -112,9 +137,9 @@ namespace moon
             "D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF"
             "E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF"
             "F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF";
-        const size_t length = (value < 16) ? 1 : static_cast<size_t>(std::log(value) / std::log(16) + 1);
+        const size_t length = int_log16(value) + 1;
         size_t padding = 0;
-        while (length+ padding < fillzero)
+        while (length + padding < fillzero)
         {
             dst[0] = '0';
             ++dst;
@@ -135,27 +160,30 @@ namespace moon
         else {
             const int i = uint32_t(value) * 2;
             dst[next] = digits[i + 1];
-            dst[next - 1] = digits[i];
+            if (next > 0)
+            {
+                dst[next - 1] = digits[i];
+            }
         }
-        return length+ padding;
+        return length + padding;
     }
 
     /*
     e. split("aa/bb/cc","/")
     */
     template<class T>
-    std::vector<T> split(const string_view_t& src, const string_view_t& sep)
+    std::vector<T> split(const std::string_view& src, const std::string_view& sep)
     {
         std::vector<T> r;
-        string_view_t::const_iterator b = src.begin();
-        string_view_t::const_iterator e = src.end();
+        std::string_view::const_iterator b = src.begin();
+        std::string_view::const_iterator e = src.end();
         for (auto i = src.begin(); i != src.end(); ++i)
         {
-            if (sep.find(*i) != string_view_t::npos)
+            if (sep.find(*i) != std::string_view::npos)
             {
                 if (b != e && b != i)
                 {
-                    r.push_back(string_convert<T>(string_view_t(std::addressof(*b), size_t(i - b))));
+                    r.push_back(string_convert<T>(std::string_view(std::addressof(*b), size_t(i - b))));
                 }
                 b = e;
             }
@@ -167,8 +195,8 @@ namespace moon
                 }
             }
         }
-        if (b != e) r.push_back(string_convert<T>(string_view_t(std::addressof(*b), size_t(e - b))));
-        return std::move(r);
+        if (b != e) r.push_back(string_convert<T>(std::string_view(std::addressof(*b), size_t(e - b))));
+        return r;
     }
 
     //format string
@@ -176,18 +204,46 @@ namespace moon
     {
         if (!fmt) return std::string("");
 
-        static constexpr size_t MAX_FMT_LEN = 8192;
-        static thread_local char fmtbuf[MAX_FMT_LEN + 1];
+        size_t fmt_buffer_size = 1024;
+
+        std::string res;
+        res.resize(fmt_buffer_size);
+
         va_list ap;
         va_start(ap, fmt);
-        // win32
-#if TARGET_PLATFORM == PLATFORM_WINDOWS
-        int n = vsnprintf_s(fmtbuf, MAX_FMT_LEN, fmt, ap);
-#else
-        int n = vsnprintf(fmtbuf, MAX_FMT_LEN, fmt, ap);
-#endif
+        int len = moon_vsnprintf(res.data(), res.size(), fmt, ap);
         va_end(ap);
-        return std::string(fmtbuf, n);
+        if (len >= 0 && len <= static_cast<int>(res.size()))
+        {
+            res.resize(len);
+            return res;
+        }
+        else
+        {
+            for (;;)
+            {
+                fmt_buffer_size *= 2;
+                res.resize(fmt_buffer_size);
+                va_start(ap, fmt);
+                len = moon_vsnprintf(res.data(), res.size(), fmt, ap);
+                va_end(ap);
+                if (len < 0)
+                {
+                    continue;
+                }
+                else
+                {
+                    res.resize(len);
+                    break;
+                }
+            }
+        }
+
+        if (len < 0) {
+            std::cerr << "vsnprintf error :" << std::endl;
+            return std::string("");
+        }
+        return res;
     }
 
     //return left n char
@@ -204,26 +260,26 @@ namespace moon
     }
 
     //" /t/n/r"
-    inline string_view_t trim_right(string_view_t v)
+    inline std::string_view trim_right(std::string_view v)
     {
         const auto words_end(v.find_last_not_of(" \t\n\r"));
-        if (words_end != string_view_t::npos) {
+        if (words_end != std::string_view::npos) {
             v.remove_suffix(v.size() - words_end - 1);
         }
         return v;
     }
 
-    inline string_view_t trim_left(string_view_t v)
+    inline std::string_view trim_left(std::string_view v)
     {
         const auto words_begin(v.find_first_not_of(" \t\n\r"));
         v.remove_prefix(std::min(words_begin, v.size()));
         return v;
     }
 
-    inline string_view_t trim_surrounding(string_view_t v)
+    inline std::string_view trim_surrounding(std::string_view v)
     {
         const auto words_end(v.find_last_not_of(" \t\n\r"));
-        if (words_end != string_view_t::npos) {
+        if (words_end != std::string_view::npos) {
             v.remove_suffix(v.size() - words_end - 1);
         }
         const auto words_begin(v.find_first_not_of(" \t\n\r"));
@@ -231,7 +287,7 @@ namespace moon
         return v;
     }
 
-    inline void replace(std::string& src, string_view_t old, string_view_t strnew)
+    inline void replace(std::string& src, std::string_view old, std::string_view strnew)
     {
         for (std::string::size_type pos(0); pos != std::string::npos; pos += strnew.size()) {
             if ((pos = src.find(old, pos)) != std::string::npos)
@@ -310,7 +366,7 @@ namespace moon
         return true;
     }
 
-    inline std::string hex_string(string_view_t s, string_view_t tok = "")
+    inline std::string hex_string(std::string_view s, std::string_view tok = "")
     {
         std::stringstream ss;
         ss << std::setiosflags(std::ios::uppercase) << std::hex;
@@ -335,7 +391,7 @@ namespace moon
     };
 
     using ihash_string_functor_t = ihash_string_functor<std::string>;
-    using ihash_string_view_functor_t = ihash_string_functor<string_view_t>;
+    using ihash_string_view_functor_t = ihash_string_functor<std::string_view>;
 
     template<typename TString>
     struct iequal_string_functor
@@ -347,5 +403,5 @@ namespace moon
     };
 
     using iequal_string_functor_t = iequal_string_functor<std::string>;
-    using iequal_string_view_functor_t = iequal_string_functor<string_view_t>;
+    using iequal_string_view_functor_t = iequal_string_functor<std::string_view>;
 };
